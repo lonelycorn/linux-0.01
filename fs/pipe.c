@@ -8,6 +8,7 @@ int read_pipe(struct m_inode * inode, char * buf, int count)
 {
 	char * b=buf;
 
+    /// wait until there's any data in the pipe
 	while (PIPE_EMPTY(*inode)) {
 		wake_up(&inode->i_wait);
 		if (inode->i_count != 2) /* are there any writers left? */
@@ -27,12 +28,14 @@ int write_pipe(struct m_inode * inode, char * buf, int count)
 {
 	char * b=buf;
 
+    /// check if there's any task waiting for this file
 	wake_up(&inode->i_wait);
 	if (inode->i_count != 2) { /* no readers */
 		current->signal |= (1<<(SIGPIPE-1));
 		return -1;
 	}
 	while (count-->0) {
+        /// pipe is full; wake up the reader task and let it clear the pipe
 		while (PIPE_FULL(*inode)) {
 			wake_up(&inode->i_wait);
 			if (inode->i_count != 2) {
@@ -41,6 +44,7 @@ int write_pipe(struct m_inode * inode, char * buf, int count)
 			}
 			sleep_on(&inode->i_wait);
 		}
+        /// TRICK: if a is an array and i is an index into the array, then a[i] <-> i[a]
 		((char *)inode->i_size)[PIPE_HEAD(*inode)] = get_fs_byte(b++);
 		INC_PIPE( PIPE_HEAD(*inode) );
 		wake_up(&inode->i_wait);
@@ -56,6 +60,10 @@ int sys_pipe(unsigned long * fildes)
 	int fd[2];
 	int i,j;
 
+    /** find 2 unused file descriptors inside kernel
+     * file_table stores all defined file descriptors, and is defined in
+     * fs/file_table.c
+     */
 	j=0;
 	for(i=0;j<2 && i<NR_FILE;i++)
 		if (!file_table[i].f_count)
@@ -64,10 +72,15 @@ int sys_pipe(unsigned long * fildes)
 		f[0]->f_count=0;
 	if (j<2)
 		return -1;
+
+    /** find 2 unused file descriptors owned by current task.
+     * current refers to the task that called this function, and is defined in
+     * kernel/sched.c
+     */
 	j=0;
 	for(i=0;j<2 && i<NR_OPEN;i++)
 		if (!current->filp[i]) {
-			current->filp[ fd[j]=i ] = f[j];
+			current->filp[ fd[j]=i ] = f[j]; /// fd is unique per task
 			j++;
 		}
 	if (j==1)
@@ -76,6 +89,8 @@ int sys_pipe(unsigned long * fildes)
 		f[0]->f_count=f[1]->f_count=0;
 		return -1;
 	}
+    /** create a PIPE inode
+     */
 	if (!(inode=get_pipe_inode())) {
 		current->filp[fd[0]] =
 			current->filp[fd[1]] = NULL;

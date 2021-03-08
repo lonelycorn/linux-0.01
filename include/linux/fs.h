@@ -81,26 +81,27 @@ struct d_inode {
 struct m_inode {
 	unsigned short i_mode;
 	unsigned short i_uid;
-	unsigned long i_size;
+	unsigned long i_size; /// size of file in bytes
 	unsigned long i_mtime;
 	unsigned char i_gid;
 	unsigned char i_nlinks;
-	unsigned short i_zone[9];
+	unsigned short i_zone[9]; /// seems to be storing type-dependent data
 /* these are in memory also */
 	struct task_struct * i_wait;
 	unsigned long i_atime;
 	unsigned long i_ctime;
 	unsigned short i_dev;
 	unsigned short i_num;
-	unsigned short i_count;
+	unsigned short i_count; /// number of references (e.g. reader, writer)
 	unsigned char i_lock;
 	unsigned char i_dirt;
-	unsigned char i_pipe;
+	unsigned char i_pipe; /// 1 if this is a PIPE
 	unsigned char i_mount;
 	unsigned char i_seek;
 	unsigned char i_update;
 };
 
+/// pipe as defined here is a ring-buffer, with (PAGE_SIZE - 1) bytes
 #define PIPE_HEAD(inode) (((long *)((inode).i_zone))[0])
 #define PIPE_TAIL(inode) (((long *)((inode).i_zone))[1])
 #define PIPE_SIZE(inode) ((PIPE_HEAD(inode)-PIPE_TAIL(inode))&(PAGE_SIZE-1))
@@ -110,11 +111,11 @@ struct m_inode {
 __asm__("incl %0\n\tandl $4095,%0"::"m" (head))
 
 struct file {
-	unsigned short f_mode;
+	unsigned short f_mode; /// 1: read; 2: write
 	unsigned short f_flags;
-	unsigned short f_count;
-	struct m_inode * f_inode;
-	off_t f_pos;
+	unsigned short f_count; /// number of references; 0 if unused
+	struct m_inode * f_inode; /// which inode this file points to
+	off_t f_pos; /// offset into this inode
 };
 
 struct super_block {
