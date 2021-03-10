@@ -13,6 +13,7 @@ typedef (*crw_ptr)(int rw,unsigned minor,char * buf,int count);
 
 #define NRDEVS ((sizeof (crw_table))/(sizeof (crw_ptr)))
 
+/// basically a map device_type --> rw_function
 static crw_ptr crw_table[]={
 	NULL,		/* nodev */
 	NULL,		/* /dev/mem */
@@ -23,12 +24,14 @@ static crw_ptr crw_table[]={
 	NULL,		/* /dev/lp */
 	NULL};		/* unnamed pipes */
 
+/// r/w of a specific tty
 static int rw_ttyx(int rw,unsigned minor,char * buf,int count)
 {
 	return ((rw==READ)?tty_read(minor,buf,count):
 		tty_write(minor,buf,count));
 }
 
+/// r/w of current task's tty
 static int rw_tty(int rw,unsigned minor,char * buf,int count)
 {
 	if (current->tty<0)
@@ -36,6 +39,12 @@ static int rw_tty(int rw,unsigned minor,char * buf,int count)
 	return rw_ttyx(rw,current->tty,buf,count);
 }
 
+/** Read/write a character device
+ * @param [in] rw: 1 for read, 0 for write
+ * @param [in] dev: unique id for the device
+ * @param [out] buf:
+ * @param [in] count:
+ */
 int rw_char(int rw,int dev, char * buf, int count)
 {
 	crw_ptr call_addr;
