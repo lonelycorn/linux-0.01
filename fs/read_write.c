@@ -16,13 +16,22 @@ extern int file_read(struct m_inode * inode, struct file * filp,
 extern int file_write(struct m_inode * inode, struct file * filp,
 		char * buf, int count);
 
+/** Move file pointer position to specified location
+ * @param [in] fd: file descriptor
+ * @param [in] offset: number of bytes to move. negative to move backwards
+ * @param [in] origin: base of offset
+ *      0: head
+ *      1: current position
+ *      2: tail
+ * @return updated file pointer position
+ */
 int sys_lseek(unsigned int fd,off_t offset, int origin)
 {
 	struct file * file;
 	int tmp;
 
 	if (fd >= NR_OPEN || !(file=current->filp[fd]) || !(file->f_inode)
-	   || !IS_BLOCKDEV(MAJOR(file->f_inode->i_dev)))
+	   || !IS_BLOCKDEV(MAJOR(file->f_inode->i_dev))) /// what's so special about block devices?
 		return -EBADF;
 	if (file->f_inode->i_pipe)
 		return -ESPIPE;
@@ -46,6 +55,12 @@ int sys_lseek(unsigned int fd,off_t offset, int origin)
 	return file->f_pos;
 }
 
+/** Read data from file descriptor to buffer
+ * @param [in] fd: file descriptor
+ * @param [out] buf: output buffer
+ * @param [in] count: number of bytes to read
+ * @return number of bytes read; or a negative number if an error occurred
+ */
 int sys_read(unsigned int fd,char * buf,int count)
 {
 	struct file * file;
@@ -55,7 +70,7 @@ int sys_read(unsigned int fd,char * buf,int count)
 		return -EINVAL;
 	if (!count)
 		return 0;
-	verify_area(buf,count);
+	verify_area(buf,count); /// make sure buffer is writable
 	inode = file->f_inode;
 	if (inode->i_pipe)
 		return (file->f_mode&1)?read_pipe(inode,buf,count):-1;
@@ -74,11 +89,17 @@ int sys_read(unsigned int fd,char * buf,int count)
 	return -EINVAL;
 }
 
+/** Write data from buffer to file descriptor
+ * @param [out] fd: file descriptor
+ * @param [in] buf: output buffer
+ * @param [in] count: number of bytes to read
+ * @return number of bytes written; or a negative number if an error occurred
+ */
 int sys_write(unsigned int fd,char * buf,int count)
 {
 	struct file * file;
 	struct m_inode * inode;
-	
+
 	if (fd>=NR_OPEN || count <0 || !(file=current->filp[fd]))
 		return -EINVAL;
 	if (!count)
