@@ -2,6 +2,7 @@
 
 #include <sys/stat.h>
 
+/// free indirect block (i_zone[7])
 static void free_ind(int dev,int block)
 {
 	struct buffer_head * bh;
@@ -20,6 +21,7 @@ static void free_ind(int dev,int block)
 	free_block(dev,block);
 }
 
+/// free double-indirect block (i_zone[8])
 static void free_dind(int dev,int block)
 {
 	struct buffer_head * bh;
@@ -38,6 +40,7 @@ static void free_dind(int dev,int block)
 	free_block(dev,block);
 }
 
+/// basically clearing the data associated with this inode
 void truncate(struct m_inode * inode)
 {
 	int i;
