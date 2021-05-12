@@ -10,29 +10,33 @@ struct m_inode inode_table[NR_INODE]={{0,},};
 static void read_inode(struct m_inode * inode);
 static void write_inode(struct m_inode * inode);
 
+/// wait until the inode is no longer locked, but don't lock it
 static inline void wait_on_inode(struct m_inode * inode)
 {
 	cli();
-	while (inode->i_lock)
+	while (inode->i_lock) /// basically a spinlock
 		sleep_on(&inode->i_wait);
 	sti();
 }
 
+/// wait until the inode is no longer locked, then lock it
 static inline void lock_inode(struct m_inode * inode)
 {
-	cli();
-	while (inode->i_lock)
+	cli(); /// why?? wouldn't this cause problems with peripherals?
+	while (inode->i_lock) /// basically a spinlock
 		sleep_on(&inode->i_wait);
 	inode->i_lock=1;
 	sti();
 }
 
+/// unlock the inode
 static inline void unlock_inode(struct m_inode * inode)
 {
 	inode->i_lock=0;
 	wake_up(&inode->i_wait);
 }
 
+/// write out inodes into buffers
 void sync_inodes(void)
 {
 	int i;
@@ -40,12 +44,13 @@ void sync_inodes(void)
 
 	inode = 0+inode_table;
 	for(i=0 ; i<NR_INODE ; i++,inode++) {
-		wait_on_inode(inode);
+		wait_on_inode(inode); /// why don't we lock it?
 		if (inode->i_dirt && !inode->i_pipe)
 			write_inode(inode);
 	}
 }
 
+/// set create==1 to create an inode if failed to find the block
 static int _bmap(struct m_inode * inode,int block,int create)
 {
 	struct buffer_head * bh;
@@ -114,6 +119,7 @@ static int _bmap(struct m_inode * inode,int block,int create)
 	return i;
 }
 
+/// find the physical block number (e.g. on a disk) of a block in a file
 int bmap(struct m_inode * inode,int block)
 {
 	return _bmap(inode,block,0);
@@ -124,6 +130,7 @@ int create_block(struct m_inode * inode, int block)
 	return _bmap(inode,block,1);
 }
 		
+/// reduce the ref count
 void iput(struct m_inode * inode)
 {
 	if (!inode)
@@ -162,6 +169,7 @@ repeat:
 
 static volatile int last_allocated_inode = 0;
 
+/// returns an unused slot in inode_table
 struct m_inode * get_empty_inode(void)
 {
 	struct m_inode * inode;
@@ -186,6 +194,7 @@ struct m_inode * get_empty_inode(void)
 			panic("No free inodes in mem");
 		}
 		last_allocated_inode = inr;
+        // make sure the content has been flushed to hard disk
 		wait_on_inode(inode);
 		while (inode->i_dirt) {
 			write_inode(inode);
@@ -215,6 +224,7 @@ struct m_inode * get_pipe_inode(void)
 	return inode;
 }
 
+/// cached read. return the @p nr -th inode of device @p dev
 struct m_inode * iget(int dev,int nr)
 {
 	struct m_inode * inode, * empty;
@@ -222,6 +232,7 @@ struct m_inode * iget(int dev,int nr)
 	if (!dev)
 		panic("iget with dev==0");
 	empty = get_empty_inode();
+    // search the cache first
 	inode = inode_table;
 	while (inode < NR_INODE+inode_table) {
 		if (inode->i_dev != dev || inode->i_num != nr) {

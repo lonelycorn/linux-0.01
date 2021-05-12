@@ -71,6 +71,7 @@ int sys_read(unsigned int fd,char * buf,int count)
 	if (!count)
 		return 0;
 	verify_area(buf,count); /// make sure buffer is writable
+    // dispatch based on inode type
 	inode = file->f_inode;
 	if (inode->i_pipe)
 		return (file->f_mode&1)?read_pipe(inode,buf,count):-1;
@@ -104,6 +105,7 @@ int sys_write(unsigned int fd,char * buf,int count)
 		return -EINVAL;
 	if (!count)
 		return 0;
+    // dispatch based on inode type
 	inode=file->f_inode;
 	if (inode->i_pipe)
 		return (file->f_mode&2)?write_pipe(inode,buf,count):-1;

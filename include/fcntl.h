@@ -4,7 +4,7 @@
 #include <sys/types.h>
 
 /* open/fcntl - NOCTTY, NDELAY isn't implemented yet */
-#define O_ACCMODE	00003
+#define O_ACCMODE	00003   /// basically an "ALL" mask for read & write access modes
 #define O_RDONLY	   00
 #define O_WRONLY	   01
 #define O_RDWR		   02

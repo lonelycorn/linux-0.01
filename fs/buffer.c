@@ -193,6 +193,8 @@ repeat:
 	return tmp;
 }
 
+/** Release a buffer
+ */
 void brelse(struct buffer_head * buf)
 {
 	if (!buf)

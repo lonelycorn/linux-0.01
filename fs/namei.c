@@ -204,6 +204,7 @@ static struct m_inode * get_dir(const char * pathname)
 	int namelen,inr,idev;
 	struct dir_entry * de;
 
+    // determine the starting point of the recursion
 	if (!current->root || !current->root->i_count)
 		panic("No root inode");
 	if (!current->pwd || !current->pwd->i_count)
@@ -218,6 +219,7 @@ static struct m_inode * get_dir(const char * pathname)
 	inode->i_count++;
 	while (1) {
 		thisname = pathname;
+        // execute --> enter a folder
 		if (!S_ISDIR(inode->i_mode) || !permission(inode,MAY_EXEC)) {
 			iput(inode);
 			return NULL;
@@ -233,7 +235,8 @@ static struct m_inode * get_dir(const char * pathname)
 		inr = de->inode;
 		idev = inode->i_dev;
 		brelse(bh);
-		iput(inode);
+		iput(inode); // done with this folder
+        // load child folder inode from device
 		if (!(inode = iget(idev,inr)))
 			return NULL;
 	}
@@ -317,6 +320,7 @@ int open_namei(const char * pathname, int flag, int mode,
 		flag |= O_WRONLY;
 	mode &= 0777 & ~current->umask;
 	mode |= I_REGULAR;
+    // get the inode of the directory containing the filename, also split and get the basename
 	if (!(dir = dir_namei(pathname,&namelen,&basename)))
 		return -ENOENT;
 	if (!namelen) {			/* special case: '/usr/' etc */
@@ -328,7 +332,7 @@ int open_namei(const char * pathname, int flag, int mode,
 		return -EISDIR;
 	}
 	bh = find_entry(dir,basename,namelen,&de);
-	if (!bh) {
+	if (!bh) { // this does not exist yet, or is a directory
 		if (!(flag & O_CREAT)) {
 			iput(dir);
 			return -ENOENT;

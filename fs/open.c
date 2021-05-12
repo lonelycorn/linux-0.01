@@ -118,20 +118,29 @@ int sys_chown(const char * filename,int uid,int gid)
 	return 0;
 }
 
+/// @p mode is for the created file, if file creation is implied in @p flag
 int sys_open(const char * filename,int flag,int mode)
 {
 	struct m_inode * inode;
 	struct file * f;
 	int i,fd;
 
+    // validate mask. A task's umask specifies the mode mask of files created by that task
 	mode &= 0777 & ~current->umask;
+    // find 1 unused file descriptor slot of this task
 	for(fd=0 ; fd<NR_OPEN ; fd++)
 		if (!current->filp[fd])
 			break;
 	if (fd>=NR_OPEN)
 		return -EINVAL;
+    // POSIX requires file descriptors to remain open after exec()
+    // FIXME: there's a bug -- we should do this in the end; or we must restore current->close_on_exec
+    // in all early-return branches
 	current->close_on_exec &= ~(1<<fd);
+    // points f to the first element of file_table (defined in fs/file_table.c
 	f=0+file_table;
+    // find an unused slot in file_table. using pointer is... very slightly faster
+    // than file_table[i]
 	for (i=0 ; i<NR_FILE ; i++,f++)
 		if (!f->f_count) break;
 	if (i>=NR_FILE)
@@ -175,6 +184,7 @@ int sys_close(unsigned int fd)
 
 	if (fd >= NR_OPEN)
 		return -EINVAL;
+    // FIXME: should this be |= ?
 	current->close_on_exec &= ~(1<<fd);
 	if (!(filp = current->filp[fd]))
 		return -EINVAL;

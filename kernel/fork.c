@@ -15,14 +15,15 @@ extern void write_verify(unsigned long address);
 
 long last_pid=0;
 
+/// check if [addr, addr + size) is writable
 void verify_area(void * addr,int size)
 {
 	unsigned long start;
 
 	start = (unsigned long) addr;
-	size += start & 0xfff;
-	start &= 0xfffff000;
-	start += get_base(current->ldt[2]);
+	size += start & 0xfff; // offset within the page
+	start &= 0xfffff000; /// start now points to page head
+	start += get_base(current->ldt[2]); // converts to linear address using Local Descriptor Table
 	while (size>0) {
 		size -= 4096;
 		write_verify(start);
