@@ -232,7 +232,7 @@ setup_paging:
 //页表项定义:
 //  31 - 12  | 11 - 9 | 8 |  7  | 6 | 5 |  4  |  3  | 2 | 1 | 0
 //  页帧地址     AVL    G   PAT   D   A   PCD   PWT  U/S R/W  P
-//  P: page exist?
+//  P: page exist?vl $1024,%%ecx\n
 //  R/W: 0=RO, 1=writable
 //  U/S: 0=super 1=user
 //  PWT: 1=write through 0=write back (cache system)

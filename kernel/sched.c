@@ -231,19 +231,62 @@ int sys_signal(long signal,long addr,long restorer)
 void sched_init(void)
 {
 	int i;
-	struct desc_struct * p;
-
+	struct desc_struct * p; //在head.h中定义
+//设置gdt表
+//设置前GDT:
+//index --- content
+//  0         NULL
+//  1       kernel cs
+//  2       kernel ds
+//  3        syscall
+//  4         NULL
+//  5         NULL
+/*tss0	{back_link = 0,
+ *            esp0 = PAGE_SIZE+(long)&init_task, //init_task在本文件27行定义
+ *            注意task0的内核栈顶不一定4k对齐
+ *            ss0 = 0x10,
+ *            esp1=0,ss1=0,esp2=0,ss2=0,
+ *            cr3 = (long)&pg_dir,\
+	 eip=0,eflag=0,eax=0,ecx=0,edx=0,ebx=0,esp=0,ebp=0, \
+	 esi=0,edi=0,es=0x17,cs=0x17,ss=0x17,ds=0x17,fs=0x17,gs=0x17, \
+	 段选择子全部是0x17=0b10111，对应的是LDT的第3项(为什么cs不是第二项)
+	 ldt=_LDT(0),trace_bitmap=0x80000000, \
+		{} \
+	},
+*/
 	set_tss_desc(gdt+FIRST_TSS_ENTRY,&(init_task.task.tss));
+/* ldt0共3项
+ * ldt0 =	{0,0}, \ //第一项0，保留
+ * 		{0x9f,0xc0fa00}, \ //第二项cs，代码段
+ * 		0x009f          | 640kb - limit=159 (160*4096=640kb)
+ * 		0x0000          | base address=0
+ * 		0xfa00          | code read/exec, dpl = 3
+ * 		0x00c0          | granularity=4096, 386 
+ * 		{0x9f,0xc0f200}, \ //第三项ds和ss， 数据段和栈段
+ * 		0x009f          | 640kb - limit=159 (160*4096=640kb)
+ * 		0x0000          | base address=0
+ * 		0xf200          | data read/write, dlp = 3
+ * 		0x00c0          | granularity=4096, 386 
+*/
 	set_ldt_desc(gdt+FIRST_LDT_ENTRY,&(init_task.task.ldt));
+//设置后:
+//  4        TSS0 task0's tss
+//  5        LDT0 task0's ldt
+
+//以下是清空index>=6的GDT表项,对应task1及以后的task
 	p = gdt+2+FIRST_TSS_ENTRY;
-	for(i=1;i<NR_TASKS;i++) {
+	for(i=1;i<NR_TASKS;i++) { //从i=1，task1开始清
 		task[i] = NULL;
+		//清task_i对应的tss_i
 		p->a=p->b=0;
 		p++;
+		//清task_i对应的ldt_i
 		p->a=p->b=0;
 		p++;
 	}
+	//将tss0加载到tr
 	ltr(0);
+	//将ldt0加载到ldtr
 	lldt(0);
 	outb_p(0x36,0x43);		/* binary, mode 3, LSB/MSB, ch 0 */
 	outb_p(LATCH & 0xff , 0x40);	/* LSB */

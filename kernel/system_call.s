@@ -56,7 +56,7 @@ bad_sys_call:
 .align 2
 reschedule:
 	pushl $ret_from_sys_call
-	jmp _schedule
+	jmp _schedule //_schedule是编译器给schedule()函数的标号
 .align 2
 _system_call:
 	cmpl $nr_system_calls-1,%eax
@@ -174,7 +174,7 @@ _sys_execve:
 	ret
 
 .align 2
-_sys_fork:
+_sys_fork: //fork()的实现，主要就是find_empty_process()和copy_process()
 	call _find_empty_process
 	testl %eax,%eax
 	js 1f
@@ -217,3 +217,13 @@ _hd_interrupt:
 	popl %eax
 	iret
 
+//系统调用流程：
+// 1. eax = 调用号， ebx，ecx，edx是调用参数
+// 2. 跳到系统调用入口 _system_call
+// 3. 调用号超范围？eax=-1，iret
+// 4. 寄存器入栈
+// 5. ds, es指向内核代码段，fs指向局部数据段/用户数据段
+// 6. 调用对应C处理函数 _sys_call_table
+// 7. 当前任务就绪？否，ret_from_sys_call入栈，schedule()。是，ret_from_sys_call
+// 8. 弹出入栈寄存器
+// 9. iret

@@ -167,18 +167,37 @@ __asm__("str %%ax\n\t" \
  */
 #define switch_to(n) {\
 struct {long a,b;} __tmp; \
-__asm__("cmpl %%ecx,_current\n\t" \
-	"je 1f\n\t" \
-	"xchgl %%ecx,_current\n\t" \
-	"movw %%dx,%1\n\t" \
-	"ljmp %0\n\t" \
-	"cmpl %%ecx,%2\n\t" \
-	"jne 1f\n\t" \
-	"clts\n" \
+__asm__("cmpl %%ecx,_current\n\t" \  //任务n是当前任务么
+	"je 1f\n\t" \                //是，啥也不干
+	"xchgl %%ecx,_current\n\t" \ //交换
+	"movw %%dx,%1\n\t" \         //dx，也就是tss，->__tmp.a
+	"ljmp %0\n\t" \              //切换任务
+	"cmpl %%ecx,%2\n\t" \        //上次任务用过协处理器么
+	"jne 1f\n\t" \               //没有跳转
+	"clts\n" \                   //有，清cr0标志
 	"1:" \
 	::"m" (*&__tmp.a),"m" (*&__tmp.b), \
 	"m" (last_task_used_math),"d" _TSS(n),"c" ((long) task[n])); \
 }
+ljmp %0怎么工作？
+
+请注意，ljmp(也称为jmpf)指令有两种形式。您知道的一个(操作码EA)有两个直接参数：一个用于段，一个用于偏移量。此处使用的一个(操作码FF /5)是不同的：segment和address参数不在代码流中，而是在内存中的某个位置，并且指令指向该地址。
+
+在这种情况下，ljmp的参数在开头指向__tmp结构。前四个字节(__tmp.a)包含偏移量，后面的两个字节(__tmp.b的下半部分)包含段。
+
+间接ljmp __tmp.a等效于ljmp [__tmp.b]:[__tmp.a]，除了ljmp segment:offset只能接受立即参数。如果您想切换到任意不带自修改代码的TSS(这是一个糟糕的主意)，则使用间接指令。
+
+另请注意，__tmp.a从未初始化。我们可以假设_TSS(n)指的是任务门(因为这是您使用TSS进行上下文切换的方式)，并且"通过"任务门的跳转偏移量将被忽略。
+
+旧指令指针在哪里？
+
+这段代码没有在TSS中存储旧的EIP。
+
+(我在此之后进行猜测，但是我认为这种猜测是合理的。)
+
+旧的EIP存储在与旧任务相对应的内核空间堆栈中。
+
+Linux 0.11为每个任务分配一个ring 0堆栈(即内核的堆栈)(请参阅fork.c中的copy_process函数，该函数初始化TSS)。当任务A期间发生中断时，旧的EIP将保存在内核空间堆栈中，而不是用户空间堆栈中。如果内核决定切换到任务B，则也将切换内核空间堆栈。当内核最终切换回任务A时，该堆栈又切换回了，通过iret我们可以返回到任务A所在的位置。
 
 #define PAGE_ALIGN(n) (((n)+0xfff)&0xfffff000)
 
