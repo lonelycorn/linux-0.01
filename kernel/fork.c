@@ -16,6 +16,13 @@ extern void write_verify(unsigned long address);
 long last_pid=0;
 
 /// check if [addr, addr + size) is writable
+//80386CPU在执行0级代码时，不会理会用户空间的页面是不是写保护的，所以
+//在执行内核代码时候，用户空间中数据页面的保护标志起不了作用，写时复制也就失去作用。
+//此函数就是在对内存进行写的时候，判断是不是可写
+//在486中，CR0中有写保护标志，内核可以通过设置该标志来禁止特权级0的代码向用户空间只读页面写数据
+//所以486中不需要该函数
+//本函数对当前进程逻辑地址从addr到addr+size这一段范围以页为单位执行写操作前的检测。
+//由于write_verify以页面位单位进行操作，所以要调整addr
 void verify_area(void * addr,int size)
 {
 	unsigned long start;
@@ -23,7 +30,9 @@ void verify_area(void * addr,int size)
 	start = (unsigned long) addr;
 	size += start & 0xfff; // offset within the page
 	start &= 0xfffff000; /// start now points to page head
+	//以上调整是因为write_verify要以内存页面边界为操作对象
 	start += get_base(current->ldt[2]); // converts to linear address using Local Descriptor Table
+	//start加上进程数据段在线性地址空间中的起始地址，变成系统整个线性空间中的地址位置。然后循环进行写页面操作。
 	while (size>0) {
 		size -= 4096;
 		write_verify(start);

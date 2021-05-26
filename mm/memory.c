@@ -57,7 +57,7 @@ __asm__("cld ; rep ; movsl"::"S" (from),"D" (to),"c" (1024):"cx","di","si")
  *        %2(LOW_MEM)内存字节位图管理的起始位置, "i"表示立即数;
  *        %3(cx = PAGING_PAGES);
  *        %4(edi = mem_map + PAGING_PAGES - 1) 指向mem_map[]内存字节位图的最后一个字节。
- * output: %0 (ax = 物理页面起始地址)
+ * output: %0 (ax = 物理页面起始地址，物理地址)
  */
 unsigned long get_free_page(void)
 {
@@ -142,7 +142,7 @@ int free_page_tables(unsigned long from,unsigned long size)
 		//*dir 取得页目录项里面的内容，也就是页表基址和页表属性，低 12 位是页表属性，所以要与上 0xfffff000
 		//pg_table就是页表所在的虚拟地址也是物理地址
 		pg_table = (unsigned long *) (0xfffff000 & *dir);
-                //
+                //清页表内容
 		for (nr=0 ; nr<1024 ; nr++) {
 			if (1 & *pg_table) //p位为1
 				free_page(0xfffff000 & *pg_table); //释放该页表项对应的那一页
@@ -223,7 +223,7 @@ int copy_page_tables(unsigned long from,unsigned long to,long size)
 
 			//低于 LOW_MEM 是内核使用的，一直都是共享的，不用修改这个属性。mem_map 数组是管理 LOW_MEM 以上内存的。
 			if (this_page > LOW_MEM) {
-				*from_page_table = this_page;
+				*from_page_table = this_page; //父进程的页面也被设置成只读，所以父进程写页面时，也会引发写保护异常
 				this_page -= LOW_MEM; //有宏不用
 				this_page >>= 12;     //有jb病
 				mem_map[this_page]++;
@@ -240,44 +240,58 @@ int copy_page_tables(unsigned long from,unsigned long to,long size)
  * out of memory (either when trying to access page-table or
  * page.)
  */
+//将一页内存映射到线性空间指定地址处address。
+//或者说是把线性空间指定地址address映射到主内存区页面page上
+//成功返回物理页面地址
 unsigned long put_page(unsigned long page,unsigned long address)
 {
 	unsigned long tmp, *page_table;
 
 /* NOTE !!! This uses the fact that _pg_dir=0 */
-
+//首先判断给定物理内存页面page的有效性
 	if (page < LOW_MEM || page > HIGH_MEMORY)
 		printk("Trying to put page %p at %p\n",page,address);
+//再看看mem_map位图中确定page是不是已经申请的页面，不是则警告
 	if (mem_map[(page-LOW_MEM)>>12] != 1)
 		printk("mem_map disagrees with %p at %p\n",page,address);
-	page_table = (unsigned long *) ((address>>20) & 0xffc);
-	if ((*page_table)&1)
+	//线性地址所在页面所在的页表在页目录中对应的页目录项的指针
+	page_table = (unsigned long *) ((address>>20) & 0xffc); //获取页表起始地址
+	if ((*page_table)&1) //页表存在
 		page_table = (unsigned long *) (0xfffff000 & *page_table);
-	else {
-		if (!(tmp=get_free_page()))
+	else { //页表不存在
+		if (!(tmp=get_free_page())) //新分配一页给页表
 			return 0;
-		*page_table = tmp|7;
-		page_table = (unsigned long *) tmp;
+		*page_table = tmp|7; //填充页表对应的页目录项
+		page_table = (unsigned long *) tmp; //取得刚刚给页表分配的新的一页的物理地址
 	}
-	page_table[(address>>12) & 0x3ff] = page | 7;
+	page_table[(address>>12) & 0x3ff] = page | 7; //填充页表项
+	//此处不用刷新TLB，因为是缺页异常处理，而无效页面不会被缓冲。
 	return page;
 }
 
+//取消写保护页面函数
+//所以内核首先看页面是否共享，是，重新申请一页面，复制被写内容，供写操作的进程使用。取消共享
+//否，设置成可写然后return
+//输入：页表项的指针，是物理地址
 void un_wp_page(unsigned long * table_entry)
 {
 	unsigned long old_page,new_page;
 
-	old_page = 0xfffff000 & *table_entry;
+	old_page = 0xfffff000 & *table_entry; //取页表项的中物理地址
+	//如果原页面地址大于内存低端(位于主内存区)，并且在页面映射字节图中是1(未共享)
+	//则设置R/W，并刷新页变换高速缓存
 	if (old_page >= LOW_MEM && mem_map[MAP_NR(old_page)]==1) {
 		*table_entry |= 2;
 		return;
 	}
+	//否则，在主内存区申请一项空闲页面给执行写操作的进程使用，取消页面共享
 	if (!(new_page=get_free_page()))
 		do_exit(SIGSEGV);
-	if (old_page >= LOW_MEM)
-		mem_map[MAP_NR(old_page)]--;
-	*table_entry = new_page | 7;
-	copy_page(old_page,new_page);
+	if (old_page >= LOW_MEM) //位于主内存区？mem_map只管理主内存区
+		mem_map[MAP_NR(old_page)]--; //共享次数减1
+	*table_entry = new_page | 7; //设置新页面可读可写
+	copy_page(old_page,new_page); //拷贝页内容
+	//bug:此处应该刷新TLB
 }	
 
 /*
@@ -285,31 +299,53 @@ void un_wp_page(unsigned long * table_entry)
  * to a shared page. It is done by copying the page to a new address
  * and decrementing the shared-page counter for the old page.
  */
+//页异常中断处理过程中调用的页写保护处理函数。
+//内核创建进程的时候，新进程和父进程共享代码和数据内存页面。新进程或父进程向内存页面写数据的时候
+//cpu检测到这个情况并且产生页面写保护异常。
+//copy-on-write,通过将页面复制到一个新页上，并递减原来页面共享计数来实现
+//对代码段的操作应该是非法的，0.01没有判断，对内核页面操作也不应该，也没有判断
+//error_code是cpu在异常时候自动生成的，指出出错类型。address是异常页面的线性地址/虚拟地址，由CR2给出
 void do_wp_page(unsigned long error_code,unsigned long address)
 {
+	
 	un_wp_page((unsigned long *)
-		(((address>>10) & 0xffc) + (0xfffff000 &
+		(((address>>10) & 0xffc)
+		//线性地址所在页面在页表中对应的页表项的索引/下表/偏移
+		 + (0xfffff000 & //mask for 页目录项
 		*((unsigned long *) ((address>>20) &0xffc)))));
+	        //取线性地址所在页面所在的页表在页目录中对应的页目录项内容
+		//与上面的mask与运算后，得出线性地址所在页面所在的页表的起始物理地址
+		//与偏移值相加后，是线性地址所在页面在页表中对应的页表项的物理地址，也就是页表项指针
 
 }
 
+//写页面验证
+//若果页面不可写，则复制页面。由verify_area()调用，参数是4G空间中的线性地址
 void write_verify(unsigned long address)
 {
 	unsigned long page;
 
+	//首先取线性地址所在页面所在的页表在页目录中对应的页目录项，&1是检测p位，判断页表是否存在
+	//不存在，返回。
+	//(这样处理是因为对于不存在的页面没有共享和写时复制可言，
+	//若程序对此不存在的页面进行写操作，直接触发no_page，并且put_page会为出错进程映射一个物理页面)
 	if (!( (page = *((unsigned long *) ((address>>20) & 0xffc)) )&1))
 		return;
-	page &= 0xfffff000;
-	page += ((address>>10) & 0xffc);
+	page &= 0xfffff000;//mask,丢弃标志，page现在是线性地址所在页面所在的页表的起始物理地址
+	page += ((address>>10) & 0xffc); //page现在是线性地址所在页面在页表中对应的页表项的指针
+	//然后，在页目录中取出页表地址()
 	if ((3 & *(unsigned long *) page) == 1)  /* non-writeable, present */
 		un_wp_page((unsigned long *) page);
 	return;
 }
 
+//缺页处理。访问不存在的页面的处理函数
+//error_code是cpu在异常时候自动生成的，指出出错类型。address是异常页面的线性地址/虚拟地址，由CR2给出
 void do_no_page(unsigned long error_code,unsigned long address)
 {
 	unsigned long tmp;
-
+//内存交换,swap到辅存，0.01不支持，0.12才支持
+//所以这里只是简单的新申请一页，给出错进程，完事
 	if (tmp=get_free_page())
 		if (put_page(tmp,address))
 			return;

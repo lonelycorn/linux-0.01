@@ -23,7 +23,7 @@
  *	28(%esp) - %oldesp
  *	2C(%esp) - %oldss
  */
-
+//系统调用时，以上寄存器cpu自动压入内核栈
 SIG_CHLD	= 17
 EAX		= 0x00
 EBX		= 0x04
@@ -167,7 +167,7 @@ _timer_interrupt:
 
 .align 2
 _sys_execve:
-	lea EIP(%esp),%eax
+	lea EIP(%esp),%eax //eax指向栈中保存的用户程序eip指针处
 	pushl %eax
 	call _do_execve
 	addl $4,%esp
