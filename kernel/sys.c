@@ -62,6 +62,9 @@ int sys_prof()
 	return -ENOSYS;
 }
 
+/* current: current task
+ * set current task's egid to gid
+ */
 int sys_setgid(int gid)
 {
 	if (current->euid && current->uid)
@@ -99,18 +102,22 @@ int sys_ulimit()
 	return -ENOSYS;
 }
 
+/* return CURRENT_TIME from linux/sched.h */
 int sys_time(long * tloc)
 {
 	int i;
 
 	i = CURRENT_TIME;
 	if (tloc) {
+        /* going to write in tloc, so check if it's writable */
 		verify_area(tloc,4);
+        /* this is address translation: set from userspace */
 		put_fs_long(i,(unsigned long *)tloc);
 	}
 	return i;
 }
 
+/* same as setgid */
 int sys_setuid(int uid)
 {
 	if (current->euid && current->uid)
@@ -123,6 +130,7 @@ int sys_setuid(int uid)
 	return 0;
 }
 
+/* set startup_time to *tptr - jiffies/HZ */
 int sys_stime(long * tptr)
 {
 	if (current->euid && current->uid)
@@ -131,6 +139,8 @@ int sys_stime(long * tptr)
 	return 0;
 }
 
+/* stores the curent process times in the tbuf */
+/* user time/system time/user time of children/system time of children */
 int sys_times(struct tms * tbuf)
 {
 	if (!tbuf)
@@ -143,6 +153,7 @@ int sys_times(struct tms * tbuf)
 	return jiffies;
 }
 
+/* change data segment size of current task's stack*/
 int sys_brk(unsigned long end_data_seg)
 {
 	if (end_data_seg >= current->end_code &&
@@ -156,6 +167,7 @@ int sys_brk(unsigned long end_data_seg)
  * I just haven't get the stomach for it. I also don't fully
  * understand sessions/pgrp etc. Let somebody who does explain it.
  */
+/* ????????????????????????????????????*/
 int sys_setpgid(int pid, int pgid)
 {
 	int i;
@@ -181,6 +193,8 @@ int sys_getpgrp(void)
 	return current->pgrp;
 }
 
+/* set session id */
+/* session is a collection of process groups, but do we have session here? */
 int sys_setsid(void)
 {
 	if (current->uid && current->euid)
@@ -193,6 +207,7 @@ int sys_setsid(void)
 	return current->pgrp;
 }
 
+/* get the current information of the kernel */
 int sys_uname(struct utsname * name)
 {
 	static struct utsname thisname = {
@@ -207,6 +222,7 @@ int sys_uname(struct utsname * name)
 	return (0);
 }
 
+/* set the calling process's file mode creation mask */
 int sys_umask(int mask)
 {
 	int old = current->umask;

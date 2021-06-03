@@ -125,8 +125,10 @@ int sys_setup(void)
 
 	if (!callable)
 		return -1;
+    /* set callable to 0 so sys_setup could only be called once */
 	callable = 0;
 	for (drive=0 ; drive<NR_HD ; drive++) {
+        /* read start_buffer for each drive */
 		rw_abs_hd(READ,drive,1,0,0,(struct buffer_head *) start_buffer);
 		if (!start_buffer->b_uptodate) {
 			printk("Unable to read partition table of drive %d\n\r",

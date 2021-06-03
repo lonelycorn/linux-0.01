@@ -167,10 +167,15 @@ void do_reserved(long esp, long error_code)
 	die("reserved (15,17-31) error",esp,error_code);
 }
 
+/* init the trap function pointer */
 void trap_init(void)
 {
 	int i;
 
+    /* set_trap_gate: only for kernel, priviledge 0
+     * set_system_gate: for the whole system: priviledge 3
+     */
+    /* basically jump to kernel/asm.s then back to do_**** */
 	set_trap_gate(0,&divide_error);
 	set_trap_gate(1,&debug);
 	set_trap_gate(2,&nmi);
